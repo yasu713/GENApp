@@ -1,0 +1,173 @@
+service: genai-management-assistant
+
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: nodejs18.x
+  region: ${opt:region, 'ap-northeast-1'}
+  stage: ${opt:stage, 'dev'}
+  architecture: arm64
+  memorySize: 512
+  timeout: 30
+  environment:
+    STAGE: ${self:provider.stage}
+    REGION: ${self:provider.region}
+    COGNITO_USER_POOL_ID: ${cf:genai-terraform-${self:provider.stage}.CognitoUserPoolId}
+    COGNITO_CLIENT_ID: ${cf:genai-terraform-${self:provider.stage}.CognitoClientId}
+    S3_BUCKET: ${cf:genai-terraform-${self:provider.stage}.S3BucketName}
+    KNOWLEDGE_BASE_ID: ${cf:genai-terraform-${self:provider.stage}.KnowledgeBaseId}
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - bedrock:InvokeModel
+            - bedrock:InvokeModelWithResponseStream
+          Resource: 
+            - arn:aws:bedrock:${self:provider.region}::foundation-model/anthropic.claude-3-5-sonnet-20240620-v1:0
+        - Effect: Allow
+          Action:
+            - bedrock:Retrieve
+          Resource: 
+            - arn:aws:bedrock:${self:provider.region}:${aws:accountId}:knowledge-base/${cf:genai-terraform-${self:provider.stage}.KnowledgeBaseId}
+        - Effect: Allow
+          Action:
+            - s3:GetObject
+            - s3:PutObject
+          Resource:
+            - arn:aws:s3:::${cf:genai-terraform-${self:provider.stage}.S3BucketName}/*
+        - Effect: Allow
+          Action:
+            - ssm:GetParameter
+            - ssm:GetParameters
+          Resource:
+            - arn:aws:ssm:${self:provider.region}:${aws:accountId}:parameter/genai/${self:provider.stage}/*
+        - Effect: Allow
+          Action:
+            - cognito-idp:AdminGetUser
+            - cognito-idp:AdminListGroupsForUser
+          Resource:
+            - arn:aws:cognito-idp:${self:provider.region}:${aws:accountId}:userpool/${cf:genai-terraform-${self:provider.stage}.CognitoUserPoolId}
+
+plugins:
+  - serverless-plugin-typescript
+  - serverless-python-requirements
+  - serverless-offline
+
+custom:
+  pythonRequirements:
+    dockerizePip: true
+    pythonBin: python3.11
+    
+functions:
+  # Node.js API Gateway Integration
+  api:
+    handler: ../lambda/nodejs/src/api.handler
+    runtime: nodejs18.x
+    architecture: arm64
+    events:
+      - httpApi:
+          path: '/api/{proxy+}'
+          method: ANY
+          cors:
+            allowOrigins:
+              - 'http://localhost:3000'
+              - 'https://*.amplifyapp.com'
+            allowHeaders:
+              - Content-Type
+              - Authorization
+            allowMethods:
+              - GET
+              - POST
+              - PUT
+              - DELETE
+              - OPTIONS
+            allowCredentials: true
+          authorizer:
+            name: cognitoAuthorizer
+            type: jwt
+            identitySource: $request.header.Authorization
+            issuerUrl: https://cognito-idp.${self:provider.region}.amazonaws.com/${cf:genai-terraform-${self:provider.stage}.CognitoUserPoolId}
+            audience:
+              - ${cf:genai-terraform-${self:provider.stage}.CognitoClientId}
+
+  # Python ReAct Agent
+  chatAgent:
+    handler: ../lambda/python/src/chat_agent.handler
+    runtime: python3.11
+    architecture: arm64
+    timeout: 60
+    memorySize: 1024
+    events:
+      - httpApi:
+          path: '/chat/agent'
+          method: POST
+          cors:
+            allowOrigins:
+              - 'http://localhost:3000'
+              - 'https://*.amplifyapp.com'
+            allowHeaders:
+              - Content-Type
+              - Authorization
+            allowMethods:
+              - POST
+              - OPTIONS
+            allowCredentials: true
+          authorizer:
+            name: cognitoAuthorizer
+            type: jwt
+            identitySource: $request.header.Authorization
+            issuerUrl: https://cognito-idp.${self:provider.region}.amazonaws.com/${cf:genai-terraform-${self:provider.stage}.CognitoUserPoolId}
+            audience:
+              - ${cf:genai-terraform-${self:provider.stage}.CognitoClientId}
+
+  # File Processing
+  fileProcessor:
+    handler: ../lambda/python/src/file_processor.handler
+    runtime: python3.11
+    architecture: arm64
+    timeout: 300
+    memorySize: 2048
+    events:
+      - s3:
+          bucket: ${cf:genai-terraform-${self:provider.stage}.S3BucketName}
+          event: s3:ObjectCreated:*
+          rules:
+            - prefix: uploads/
+          existing: true
+
+  # User Management (Admin)
+  userManagement:
+    handler: ../lambda/nodejs/src/userManagement.handler
+    runtime: nodejs18.x
+    architecture: arm64
+    events:
+      - httpApi:
+          path: '/admin/users'
+          method: GET
+          cors:
+            allowOrigins:
+              - 'http://localhost:3000'
+              - 'https://*.amplifyapp.com'
+          authorizer:
+            name: cognitoAuthorizer
+            type: jwt
+            identitySource: $request.header.Authorization
+            issuerUrl: https://cognito-idp.${self:provider.region}.amazonaws.com/${cf:genai-terraform-${self:provider.stage}.CognitoUserPoolId}
+            audience:
+              - ${cf:genai-terraform-${self:provider.stage}.CognitoClientId}
+      - httpApi:
+          path: '/admin/users/{userId}'
+          method: PUT
+          cors:
+            allowOrigins:
+              - 'http://localhost:3000'
+              - 'https://*.amplifyapp.com'
+          authorizer:
+            name: cognitoAuthorizer
+            type: jwt
+            identitySource: $request.header.Authorization
+            issuerUrl: https://cognito-idp.${self:provider.region}.amazonaws.com/${cf:genai-terraform-${self:provider.stage}.CognitoUserPoolId}
+            audience:
+              - ${cf:genai-terraform-${self:provider.stage}.CognitoClientId}

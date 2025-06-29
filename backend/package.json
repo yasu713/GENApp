@@ -1,0 +1,23 @@
+{
+  "name": "genai-backend",
+  "version": "1.0.0",
+  "description": "Backend for AI Management Assistant",
+  "private": true,
+  "scripts": {
+    "deploy": "cd serverless && npm run deploy",
+    "deploy:dev": "cd serverless && npm run deploy:dev",
+    "deploy:prod": "cd serverless && npm run deploy:prod",
+    "test": "cd lambda/nodejs && npm test && cd ../python && python -m pytest",
+    "lint": "cd lambda/nodejs && npm run lint",
+    "terraform:init": "cd terraform && terraform init",
+    "terraform:plan": "cd terraform && terraform plan",
+    "terraform:apply": "cd terraform && terraform apply",
+    "terraform:destroy": "cd terraform && terraform destroy"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
