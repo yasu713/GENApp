@@ -9,14 +9,28 @@ import { Card } from '@/components/ui/card'
 interface ChatMessagesProps {
   messages: Message[]
   isLoading: boolean
+  isStreaming?: boolean
+  streamingMessageId?: string | null
 }
 
-export function ChatMessages({ messages, isLoading }: ChatMessagesProps) {
+export function ChatMessages({ 
+  messages, 
+  isLoading, 
+  isStreaming, 
+  streamingMessageId 
+}: ChatMessagesProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  // Auto-scroll during streaming
+  useEffect(() => {
+    if (isStreaming && streamingMessageId) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [messages, isStreaming, streamingMessageId])
 
   return (
     <div className="h-full overflow-y-auto scrollbar-thin p-4 space-y-6">
@@ -113,7 +127,12 @@ export function ChatMessages({ messages, isLoading }: ChatMessagesProps) {
                 )}
 
                 {/* Message Text */}
-                <div className="whitespace-pre-wrap">{message.content}</div>
+                <div className="whitespace-pre-wrap">
+                  {message.content}
+                  {message.isStreaming && (
+                    <span className="inline-block w-2 h-5 bg-blue-500 animate-pulse ml-1"></span>
+                  )}
+                </div>
               </Card>
 
               {/* Timestamp */}

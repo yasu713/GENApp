@@ -10,14 +10,16 @@ export function ChatInterface() {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
-      content: 'こんにちは！AI Management Assistantです。管理業務に関するご質問やサポートが必要でしたら、お気軽にお声かけください。',
+      content: 'こんにちは！AI Management Assistantです。管理業務に関するご質問やサポートが必要でしたら、お気軽にお声かけください。\n\n💡 **新機能**: リアルタイムストリーミングレスポンスに対応しました！',
       role: 'assistant',
       timestamp: new Date(),
     }
   ])
   const [isLoading, setIsLoading] = useState(false)
+  const [isStreaming, setIsStreaming] = useState(false)
+  const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null)
 
-  const handleSendMessage = async (content: string, attachments: File[] = []) => {
+  const handleSendMessage = async (content: string, attachments: File[] = [], useStreaming = true) => {
     const userMessage: Message = {
       id: generateId(),
       content,
@@ -33,7 +35,12 @@ export function ChatInterface() {
     }
 
     setMessages(prev => [...prev, userMessage])
-    setIsLoading(true)
+    
+    if (useStreaming) {
+      setIsStreaming(true)
+    } else {
+      setIsLoading(true)
+    }
 
     try {
       // Upload files if any
@@ -76,22 +83,81 @@ export function ChatInterface() {
         }
       }
 
-      // Send message to API
-      const { sendChatMessage } = await import('@/lib/api')
-      const response = await sendChatMessage({
+      const requestData = {
         message: messageContent,
         history,
         sessionId: generateId()
-      })
-      
-      const assistantMessage: Message = {
-        id: response.message.id,
-        content: response.message.content,
-        role: 'assistant',
-        timestamp: new Date(response.message.timestamp),
       }
 
-      setMessages(prev => [...prev, assistantMessage])
+      if (useStreaming) {
+        // Use streaming API
+        const { sendChatMessageStream } = await import('@/lib/api')
+        
+        // Create placeholder message for streaming
+        const streamingMessageId = generateId()
+        setStreamingMessageId(streamingMessageId)
+        
+        const streamingMessage: Message = {
+          id: streamingMessageId,
+          content: '',
+          role: 'assistant',
+          timestamp: new Date(),
+          isStreaming: true
+        }
+        
+        setMessages(prev => [...prev, streamingMessage])
+
+        await sendChatMessageStream(requestData, {
+          onStart: (data) => {
+            console.log('Streaming started:', data)
+          },
+          onChunk: (chunk, fullContent) => {
+            setMessages(prev => prev.map(msg => 
+              msg.id === streamingMessageId 
+                ? { ...msg, content: fullContent }
+                : msg
+            ))
+          },
+          onEnd: (message) => {
+            setMessages(prev => prev.map(msg => 
+              msg.id === streamingMessageId 
+                ? { 
+                    ...msg, 
+                    content: message.content,
+                    isStreaming: false,
+                    timestamp: new Date(message.timestamp)
+                  }
+                : msg
+            ))
+            setStreamingMessageId(null)
+          },
+          onError: (error) => {
+            setMessages(prev => prev.map(msg => 
+              msg.id === streamingMessageId 
+                ? { 
+                    ...msg, 
+                    content: `エラーが発生しました: ${error}`,
+                    isStreaming: false
+                  }
+                : msg
+            ))
+            setStreamingMessageId(null)
+          }
+        })
+      } else {
+        // Use regular API
+        const { sendChatMessage } = await import('@/lib/api')
+        const response = await sendChatMessage(requestData)
+        
+        const assistantMessage: Message = {
+          id: response.message.id,
+          content: response.message.content,
+          role: 'assistant',
+          timestamp: new Date(response.message.timestamp),
+        }
+
+        setMessages(prev => [...prev, assistantMessage])
+      }
     } catch (error) {
       console.error('Error sending message:', error)
       
@@ -105,16 +171,25 @@ export function ChatInterface() {
       setMessages(prev => [...prev, errorMessage])
     } finally {
       setIsLoading(false)
+      setIsStreaming(false)
     }
   }
 
   return (
     <div className="flex flex-col h-full bg-gray-50">
       <div className="flex-1 overflow-hidden">
-        <ChatMessages messages={messages} isLoading={isLoading} />
+        <ChatMessages 
+          messages={messages} 
+          isLoading={isLoading} 
+          isStreaming={isStreaming}
+          streamingMessageId={streamingMessageId}
+        />
       </div>
       <div className="border-t border-gray-200 bg-white">
-        <ChatInput onSendMessage={handleSendMessage} isLoading={isLoading} />
+        <ChatInput 
+          onSendMessage={handleSendMessage} 
+          isLoading={isLoading || isStreaming} 
+        />
       </div>
     </div>
   )

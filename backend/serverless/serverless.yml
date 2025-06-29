@@ -123,6 +123,39 @@ functions:
             audience:
               - ${cf:genai-terraform-${self:provider.stage}.CognitoClientId}
 
+  # Python Streaming ReAct Agent
+  chatStream:
+    handler: ../lambda/python/src/chat_stream.lambda_handler
+    runtime: python3.11
+    architecture: arm64
+    timeout: 300
+    memorySize: 1024
+    environment:
+      PYTHONPATH: /var/runtime:/var/task
+    events:
+      - httpApi:
+          path: '/chat/stream'
+          method: POST
+          cors:
+            allowOrigins:
+              - 'http://localhost:3000'
+              - 'https://*.amplifyapp.com'
+            allowHeaders:
+              - Content-Type
+              - Authorization
+              - Cache-Control
+            allowMethods:
+              - POST
+              - OPTIONS
+            allowCredentials: true
+          authorizer:
+            name: cognitoAuthorizer
+            type: jwt
+            identitySource: $request.header.Authorization
+            issuerUrl: https://cognito-idp.${self:provider.region}.amazonaws.com/${cf:genai-terraform-${self:provider.stage}.CognitoUserPoolId}
+            audience:
+              - ${cf:genai-terraform-${self:provider.stage}.CognitoClientId}
+
   # File Processing
   fileProcessor:
     handler: ../lambda/python/src/file_processor.handler

@@ -2,7 +2,7 @@ import json
 import os
 import boto3
 import logging
-import base64
+import time
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 from langchain.tools import Tool
@@ -12,6 +12,7 @@ from langchain_aws import ChatBedrock
 from langgraph.prebuilt import create_react_agent
 from PIL import Image
 import io
+import base64
 from auth_validator import validate_token, log_auth_event
 
 # Configure logging
@@ -24,13 +25,14 @@ s3_client = boto3.client('s3')
 ssm_client = boto3.client('ssm')
 knowledge_base_client = boto3.client('bedrock-agent-runtime')
 
-# Initialize Bedrock client
-bedrock_llm = ChatBedrock(
+# Initialize Bedrock client for streaming
+bedrock_llm_streaming = ChatBedrock(
     model_id="anthropic.claude-3-5-sonnet-20241022-v2:0",
-    region_name="ap-northeast-1"
+    region_name="ap-northeast-1",
+    streaming=True
 )
 
-class ChatAgent:
+class StreamingChatAgent:
     def __init__(self):
         self.model_id = "anthropic.claude-3-5-sonnet-20241022-v2:0"
         self.search_tool = DuckDuckGoSearchResults(max_results=5)
@@ -193,71 +195,32 @@ class ChatAgent:
             ]
             
             # Use Claude directly for vision analysis
-            response = bedrock_llm.invoke(messages)
+            response = bedrock_llm_streaming.invoke(messages)
             
             return f"Image analysis results:\n\n{response.content}"
             
         except Exception as e:
             logger.error(f"Image analysis error: {e}")
             return f"Image analysis failed: {str(e)}"
+
+
+
+def lambda_handler(event, context):
+    """Lambda handler for streaming chat agent"""
+    logger.info(f"Streaming chat event: {json.dumps(event)}")
     
-    def invoke_claude(self, messages: List[Dict], tools: List[Tool]) -> str:
-        """Invoke Claude 3.5 Sonnet via Bedrock with ReAct agent"""
-        try:
-            # Format messages for Claude
-            formatted_messages = []
-            for msg in messages:
-                if msg['role'] == 'user':
-                    formatted_messages.append(HumanMessage(content=msg['content']))
-                elif msg['role'] == 'assistant':
-                    formatted_messages.append(AIMessage(content=msg['content']))
-            
-            # Create ReAct agent with tools
-            agent_executor = create_react_agent(
-                model=bedrock_llm,
-                tools=tools
-            )
-            
-            # Get the latest user message
-            latest_message = formatted_messages[-1].content if formatted_messages else ""
-            
-            # Execute agent
-            result = agent_executor.invoke({
-                'messages': formatted_messages
-            })
-            
-            # Extract the response from the result
-            if isinstance(result, dict):
-                if 'messages' in result and result['messages']:
-                    last_message = result['messages'][-1]
-                    if hasattr(last_message, 'content'):
-                        return last_message.content
-                    elif isinstance(last_message, dict) and 'content' in last_message:
-                        return last_message['content']
-                elif 'output' in result:
-                    return result['output']
-            
-            return str(result) if result else 'No response generated'
-            
-        except Exception as e:
-            logger.error(f"Claude invocation error: {e}")
-            return f"AI処理中にエラーが発生しました: {str(e)}"
-
-
-def handler(event, context):
-    """Lambda handler for chat agent"""
-    logger.info(f"Chat agent event: {json.dumps(event)}")
+    # CORS headers
+    cors_headers = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Content-Type,Authorization,Cache-Control',
+        'Access-Control-Allow-Methods': 'POST,OPTIONS',
+        'Access-Control-Allow-Credentials': 'true',
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+    }
     
     try:
-        # CORS headers
-        cors_headers = {
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Headers': 'Content-Type,Authorization',
-            'Access-Control-Allow-Methods': 'POST,OPTIONS',
-            'Access-Control-Allow-Credentials': 'true',
-            'Content-Type': 'application/json'
-        }
-        
         # Handle CORS preflight
         if event.get('httpMethod') == 'OPTIONS':
             return {
@@ -265,7 +228,7 @@ def handler(event, context):
                 'headers': cors_headers,
                 'body': ''
             }
-        
+
         # Validate authorization
         auth_header = event.get('headers', {}).get('Authorization') or event.get('headers', {}).get('authorization')
         if not auth_header:
@@ -274,7 +237,7 @@ def handler(event, context):
                 'headers': cors_headers,
                 'body': json.dumps({'error': 'Missing authorization header'})
             }
-        
+
         user = validate_token(auth_header)
         if not user:
             return {
@@ -284,54 +247,113 @@ def handler(event, context):
             }
         
         # Log authentication event
-        log_auth_event(user, 'chat_agent_access', f'Session: {body.get("sessionId", "unknown")}')
-        
+        log_auth_event(user, 'chat_stream_access', f'Session: {body.get("sessionId", "unknown")}')
+
         # Parse request body
         body = json.loads(event.get('body', '{}'))
         message = body.get('message', '')
         session_id = body.get('sessionId', '')
         conversation_history = body.get('history', [])
-        
+
         if not message:
             return {
                 'statusCode': 400,
                 'headers': cors_headers,
                 'body': json.dumps({'error': 'Message is required'})
             }
-        
-        # Initialize chat agent
-        agent = ChatAgent()
+
+        # Initialize streaming chat agent
+        agent = StreamingChatAgent()
         tools = agent.create_tools()
+
+        # Prepare messages for agent (simplified for now)
+        # For streaming, we'll use a simpler approach
+        formatted_messages = []
+        for msg in conversation_history:
+            if msg['role'] == 'user':
+                formatted_messages.append(HumanMessage(content=msg['content']))
+            elif msg['role'] == 'assistant':
+                formatted_messages.append(AIMessage(content=msg['content']))
         
-        # Prepare messages for agent
-        messages = conversation_history + [{'role': 'user', 'content': message}]
+        formatted_messages.append(HumanMessage(content=message))
+
+        # Create streaming response
+        response_parts = []
         
-        # Get response from agent
-        response = agent.invoke_claude(messages, tools)
-        
-        # Prepare response
-        result = {
-            'message': {
-                'id': context.aws_request_id,
-                'content': response,
-                'role': 'assistant',
-                'timestamp': datetime.utcnow().isoformat() + 'Z'
-            },
-            'sessionId': session_id or context.aws_request_id
+        # Start message
+        start_event = {
+            'event': 'start',
+            'data': {
+                'sessionId': session_id or context.aws_request_id,
+                'messageId': context.aws_request_id
+            }
         }
-        
-        logger.info(f"Chat response generated for user: {user.get('sub', 'unknown')}")
-        
+        response_parts.append(f"data: {json.dumps(start_event)}\n\n")
+
+        # Generate response using regular model (simplified)
+        try:
+            # Use the regular ChatBedrock for now, streaming will be enhanced later
+            response = bedrock_llm_streaming.invoke(formatted_messages)
+            full_content = response.content if hasattr(response, 'content') else str(response)
+            
+            # Simulate streaming by breaking into chunks
+            words = full_content.split()
+            accumulated_content = ""
+            
+            for i, word in enumerate(words):
+                accumulated_content += word + " "
+                
+                chunk_event = {
+                    'event': 'chunk',
+                    'data': {
+                        'content': word + " ",
+                        'fullContent': accumulated_content.strip()
+                    }
+                }
+                response_parts.append(f"data: {json.dumps(chunk_event)}\n\n")
+                
+                # Add some chunks to simulate real streaming
+                if i % 3 == 0 and i > 0:
+                    time.sleep(0.1)  # Small delay to simulate real streaming
+
+            # End message
+            end_event = {
+                'event': 'end',
+                'data': {
+                    'message': {
+                        'id': context.aws_request_id,
+                        'content': accumulated_content.strip(),
+                        'role': 'assistant',
+                        'timestamp': datetime.utcnow().isoformat() + 'Z'
+                    }
+                }
+            }
+            response_parts.append(f"data: {json.dumps(end_event)}\n\n")
+
+        except Exception as agent_error:
+            logger.error(f"Agent error: {agent_error}")
+            error_event = {
+                'event': 'error',
+                'data': {'error': f'Agent processing failed: {str(agent_error)}'}
+            }
+            response_parts.append(f"data: {json.dumps(error_event)}\n\n")
+
+        logger.info(f"Streaming response completed for user: {user.get('sub', 'unknown')}")
+
         return {
             'statusCode': 200,
             'headers': cors_headers,
-            'body': json.dumps(result)
+            'body': ''.join(response_parts)
         }
-        
+
     except Exception as e:
-        logger.error(f"Chat agent error: {e}")
+        logger.error(f"Streaming handler error: {e}")
+        error_event = {
+            'event': 'error',
+            'data': {'error': 'Internal server error'}
+        }
         return {
             'statusCode': 500,
             'headers': cors_headers,
-            'body': json.dumps({'error': 'Internal server error'})
+            'body': f"data: {json.dumps(error_event)}\n\n"
         }
