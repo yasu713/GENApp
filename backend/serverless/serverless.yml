@@ -25,6 +25,7 @@ provider:
             - bedrock:InvokeModel
             - bedrock:InvokeModelWithResponseStream
           Resource: 
+            - arn:aws:bedrock:${self:provider.region}::foundation-model/anthropic.claude-3-5-sonnet-20241022-v2:0
             - arn:aws:bedrock:${self:provider.region}::foundation-model/anthropic.claude-3-5-sonnet-20240620-v1:0
         - Effect: Allow
           Action:

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef } from 'react'
-import { Send, Paperclip, X, Image as ImageIcon, FileText } from 'lucide-react'
+import { Send, Paperclip, X, FileText } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 
@@ -33,7 +33,20 @@ export function ChatInput({ onSendMessage, isLoading }: ChatInputProps) {
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || [])
-    setAttachments(prev => [...prev, ...files])
+    // Filter supported file types
+    const supportedFiles = files.filter(file => {
+      const isImage = file.type.startsWith('image/')
+      const isDocument = ['application/pdf', 'text/plain', 
+        'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
+        .includes(file.type)
+      return isImage || isDocument
+    })
+    
+    if (supportedFiles.length !== files.length) {
+      alert('サポートされていないファイル形式が含まれています。画像ファイル（JPG, PNG, GIF, WebP）またはドキュメント（PDF, DOC, DOCX, TXT）のみアップロード可能です。')
+    }
+    
+    setAttachments(prev => [...prev, ...supportedFiles])
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
     }
@@ -59,28 +72,41 @@ export function ChatInput({ onSendMessage, isLoading }: ChatInputProps) {
           {attachments.map((file, index) => (
             <div
               key={index}
-              className="flex items-center justify-between p-2 bg-gray-50 rounded-lg"
+              className="flex items-start justify-between p-3 bg-gray-50 rounded-lg"
             >
-              <div className="flex items-center space-x-2">
+              <div className="flex items-start space-x-3 flex-1">
                 {file.type.startsWith('image/') ? (
-                  <ImageIcon className="h-4 w-4 text-gray-500" />
+                  <div className="flex-shrink-0">
+                    <img
+                      src={URL.createObjectURL(file)}
+                      alt={file.name}
+                      className="w-16 h-16 object-cover rounded border"
+                    />
+                  </div>
                 ) : (
-                  <FileText className="h-4 w-4 text-gray-500" />
+                  <div className="flex-shrink-0 w-16 h-16 bg-gray-200 rounded border flex items-center justify-center">
+                    <FileText className="h-6 w-6 text-gray-500" />
+                  </div>
                 )}
-                <div>
-                  <p className="text-sm font-medium text-gray-700">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-700 truncate">
                     {file.name}
                   </p>
                   <p className="text-xs text-gray-500">
                     {formatFileSize(file.size)}
                   </p>
+                  {file.type.startsWith('image/') && (
+                    <p className="text-xs text-blue-600 mt-1">
+                      画像解析機能で自動分析されます
+                    </p>
+                  )}
                 </div>
               </div>
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={() => removeAttachment(index)}
-                className="h-6 w-6"
+                className="h-6 w-6 flex-shrink-0"
               >
                 <X className="h-3 w-3" />
               </Button>

@@ -4,6 +4,7 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { v4 as uuidv4 } from 'uuid';
 import { User, FileUploadRequest, FileUploadResponse } from '../types';
 import { successResponse, errorResponse } from '../utils/response';
+import * as multipart from 'lambda-multipart-parser';
 
 const ALLOWED_FILE_TYPES = [
   'image/jpeg',
@@ -24,47 +25,67 @@ export const handleFileUpload = async (
   s3Client: S3Client
 ): Promise<APIGatewayProxyResult> => {
   try {
-    const body: FileUploadRequest = JSON.parse(event.body || '{}');
+    // Parse multipart form data
+    const result = await multipart.parse(event);
+    const files = result.files;
     
-    if (!body.fileName || !body.contentType) {
-      return errorResponse(400, 'fileName and contentType are required');
+    if (!files || files.length === 0) {
+      return errorResponse(400, 'No files provided');
     }
 
-    // Validate file type
-    if (!ALLOWED_FILE_TYPES.includes(body.contentType)) {
-      return errorResponse(400, 'File type not allowed');
+    const uploadedFiles = [];
+
+    for (const file of files) {
+      // Validate file type
+      if (!ALLOWED_FILE_TYPES.includes(file.contentType)) {
+        continue; // Skip unsupported files
+      }
+
+      // Validate file size
+      if (file.content.length > MAX_FILE_SIZE) {
+        continue; // Skip oversized files
+      }
+
+      const fileId = uuidv4();
+      const fileExtension = file.filename.split('.').pop() || '';
+      const fileName = `uploads/${user.sub}/${fileId}-${file.filename}`;
+      
+      // Upload to S3
+      const command = new PutObjectCommand({
+        Bucket: process.env.S3_BUCKET!,
+        Key: fileName,
+        Body: file.content,
+        ContentType: file.contentType,
+        Metadata: {
+          userId: user.sub,
+          originalName: file.filename,
+          fileId: fileId,
+        },
+      });
+
+      await s3Client.send(command);
+
+      const uploadedFile = {
+        key: fileName,
+        name: file.filename,
+        size: file.content.length,
+        contentType: file.contentType,
+        url: `https://${process.env.S3_BUCKET}.s3.${process.env.REGION}.amazonaws.com/${fileName}`,
+        fileId,
+      };
+
+      uploadedFiles.push(uploadedFile);
+      console.log(`File uploaded by user: ${user.sub}, fileId: ${fileId}, fileName: ${file.filename}`);
     }
 
-    // Validate file size
-    if (body.size > MAX_FILE_SIZE) {
-      return errorResponse(400, 'File size too large (max 10MB)');
+    if (uploadedFiles.length === 0) {
+      return errorResponse(400, 'No valid files were uploaded');
     }
 
-    const fileId = uuidv4();
-    const fileName = `uploads/${user.sub}/${fileId}-${body.fileName}`;
-    
-    // Generate pre-signed URL for upload
-    const command = new PutObjectCommand({
-      Bucket: process.env.S3_BUCKET!,
-      Key: fileName,
-      ContentType: body.contentType,
-      Metadata: {
-        userId: user.sub,
-        originalName: body.fileName,
-        fileId: fileId,
-      },
+    return successResponse({ 
+      files: uploadedFiles,
+      count: uploadedFiles.length 
     });
-
-    const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
-
-    const response: FileUploadResponse = {
-      uploadUrl,
-      fileId,
-    };
-
-    console.log(`File upload requested by user: ${user.sub}, fileId: ${fileId}`);
-    
-    return successResponse(response);
     
   } catch (error) {
     console.error('File upload handler error:', error);

@@ -62,24 +62,51 @@ export function ChatMessages({ messages, isLoading }: ChatMessagesProps) {
               >
                 {/* Attachments */}
                 {message.attachments && message.attachments.length > 0 && (
-                  <div className="mb-3 space-y-2">
+                  <div className="mb-3 space-y-3">
                     {message.attachments.map((attachment) => (
-                      <div
-                        key={attachment.id}
-                        className={`flex items-center space-x-2 p-2 rounded ${
-                          message.role === 'user'
-                            ? 'bg-blue-600/20'
-                            : 'bg-gray-100'
-                        }`}
-                      >
+                      <div key={attachment.id}>
                         {attachment.type === 'image' ? (
-                          <ImageIcon className="h-4 w-4" />
+                          <div className="space-y-2">
+                            <img
+                              src={attachment.url}
+                              alt={attachment.name}
+                              className="max-w-full h-auto rounded border max-h-64 object-contain"
+                            />
+                            <div
+                              className={`flex items-center space-x-2 p-2 rounded text-xs ${
+                                message.role === 'user'
+                                  ? 'bg-blue-600/20'
+                                  : 'bg-gray-100'
+                              }`}
+                            >
+                              <ImageIcon className="h-3 w-3" />
+                              <span className="truncate">{attachment.name}</span>
+                              {attachment.size && (
+                                <span className="text-opacity-70">
+                                  ({Math.round(attachment.size / 1024)}KB)
+                                </span>
+                              )}
+                            </div>
+                          </div>
                         ) : (
-                          <FileText className="h-4 w-4" />
+                          <div
+                            className={`flex items-center space-x-2 p-2 rounded ${
+                              message.role === 'user'
+                                ? 'bg-blue-600/20'
+                                : 'bg-gray-100'
+                            }`}
+                          >
+                            <FileText className="h-4 w-4" />
+                            <span className="text-sm truncate">
+                              {attachment.name}
+                            </span>
+                            {attachment.size && (
+                              <span className="text-xs text-opacity-70">
+                                ({Math.round(attachment.size / 1024)}KB)
+                              </span>
+                            )}
+                          </div>
                         )}
-                        <span className="text-sm truncate">
-                          {attachment.name}
-                        </span>
                       </div>
                     ))}
                   </div>
