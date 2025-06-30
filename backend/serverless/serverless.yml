@@ -17,6 +17,7 @@ provider:
     COGNITO_CLIENT_ID: ${cf:genai-terraform-${self:provider.stage}.CognitoClientId}
     S3_BUCKET: ${cf:genai-terraform-${self:provider.stage}.S3BucketName}
     KNOWLEDGE_BASE_ID: ${cf:genai-terraform-${self:provider.stage}.KnowledgeBaseId}
+    ALLOWED_ORIGINS: ${ssm:/genai/${self:provider.stage}/cors-origins}
   iam:
     role:
       statements:
