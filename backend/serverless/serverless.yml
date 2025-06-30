@@ -13,10 +13,10 @@ provider:
   environment:
     STAGE: ${self:provider.stage}
     REGION: ${self:provider.region}
-    COGNITO_USER_POOL_ID: ${cf:genai-terraform-${self:provider.stage}.CognitoUserPoolId}
-    COGNITO_CLIENT_ID: ${cf:genai-terraform-${self:provider.stage}.CognitoClientId}
-    S3_BUCKET: ${cf:genai-terraform-${self:provider.stage}.S3BucketName}
-    KNOWLEDGE_BASE_ID: ${cf:genai-terraform-${self:provider.stage}.KnowledgeBaseId}
+    COGNITO_USER_POOL_ID: ap-northeast-1_K5XHMMv4s
+    COGNITO_CLIENT_ID: 7l1imjcdipkluomk4tbii9jg1q
+    S3_BUCKET: genai-dev-storage-osiy07k2
+    KNOWLEDGE_BASE_ID: placeholder-kb-id
     ALLOWED_ORIGINS: ${ssm:/genai/${self:provider.stage}/cors-origins}
   iam:
     role:
@@ -32,13 +32,13 @@ provider:
           Action:
             - bedrock:Retrieve
           Resource: 
-            - arn:aws:bedrock:${self:provider.region}:${aws:accountId}:knowledge-base/${cf:genai-terraform-${self:provider.stage}.KnowledgeBaseId}
+            - arn:aws:bedrock:${self:provider.region}:${aws:accountId}:knowledge-base/*
         - Effect: Allow
           Action:
             - s3:GetObject
             - s3:PutObject
           Resource:
-            - arn:aws:s3:::${cf:genai-terraform-${self:provider.stage}.S3BucketName}/*
+            - arn:aws:s3:::genai-dev-storage-osiy07k2/*
         - Effect: Allow
           Action:
             - ssm:GetParameter
@@ -50,7 +50,7 @@ provider:
             - cognito-idp:AdminGetUser
             - cognito-idp:AdminListGroupsForUser
           Resource:
-            - arn:aws:cognito-idp:${self:provider.region}:${aws:accountId}:userpool/${cf:genai-terraform-${self:provider.stage}.CognitoUserPoolId}
+            - arn:aws:cognito-idp:${self:provider.region}:${aws:accountId}:userpool/ap-northeast-1_K5XHMMv4s
 
 plugins:
   - serverless-plugin-typescript
@@ -90,9 +90,9 @@ functions:
             name: cognitoAuthorizer
             type: jwt
             identitySource: $request.header.Authorization
-            issuerUrl: https://cognito-idp.${self:provider.region}.amazonaws.com/${cf:genai-terraform-${self:provider.stage}.CognitoUserPoolId}
+            issuerUrl: https://cognito-idp.${self:provider.region}.amazonaws.com/ap-northeast-1_K5XHMMv4s
             audience:
-              - ${cf:genai-terraform-${self:provider.stage}.CognitoClientId}
+              - 7l1imjcdipkluomk4tbii9jg1q
 
   # Python ReAct Agent
   chatAgent:
@@ -120,9 +120,9 @@ functions:
             name: cognitoAuthorizer
             type: jwt
             identitySource: $request.header.Authorization
-            issuerUrl: https://cognito-idp.${self:provider.region}.amazonaws.com/${cf:genai-terraform-${self:provider.stage}.CognitoUserPoolId}
+            issuerUrl: https://cognito-idp.${self:provider.region}.amazonaws.com/ap-northeast-1_K5XHMMv4s
             audience:
-              - ${cf:genai-terraform-${self:provider.stage}.CognitoClientId}
+              - 7l1imjcdipkluomk4tbii9jg1q
 
   # Python Streaming ReAct Agent
   chatStream:
@@ -153,9 +153,9 @@ functions:
             name: cognitoAuthorizer
             type: jwt
             identitySource: $request.header.Authorization
-            issuerUrl: https://cognito-idp.${self:provider.region}.amazonaws.com/${cf:genai-terraform-${self:provider.stage}.CognitoUserPoolId}
+            issuerUrl: https://cognito-idp.${self:provider.region}.amazonaws.com/ap-northeast-1_K5XHMMv4s
             audience:
-              - ${cf:genai-terraform-${self:provider.stage}.CognitoClientId}
+              - 7l1imjcdipkluomk4tbii9jg1q
 
   # File Processing
   fileProcessor:
@@ -166,7 +166,7 @@ functions:
     memorySize: 2048
     events:
       - s3:
-          bucket: ${cf:genai-terraform-${self:provider.stage}.S3BucketName}
+          bucket: genai-dev-storage-osiy07k2
           event: s3:ObjectCreated:*
           rules:
             - prefix: uploads/
@@ -189,9 +189,9 @@ functions:
             name: cognitoAuthorizer
             type: jwt
             identitySource: $request.header.Authorization
-            issuerUrl: https://cognito-idp.${self:provider.region}.amazonaws.com/${cf:genai-terraform-${self:provider.stage}.CognitoUserPoolId}
+            issuerUrl: https://cognito-idp.${self:provider.region}.amazonaws.com/ap-northeast-1_K5XHMMv4s
             audience:
-              - ${cf:genai-terraform-${self:provider.stage}.CognitoClientId}
+              - 7l1imjcdipkluomk4tbii9jg1q
       - httpApi:
           path: '/admin/users/{userId}'
           method: PUT
@@ -203,6 +203,6 @@ functions:
             name: cognitoAuthorizer
             type: jwt
             identitySource: $request.header.Authorization
-            issuerUrl: https://cognito-idp.${self:provider.region}.amazonaws.com/${cf:genai-terraform-${self:provider.stage}.CognitoUserPoolId}
+            issuerUrl: https://cognito-idp.${self:provider.region}.amazonaws.com/ap-northeast-1_K5XHMMv4s
             audience:
-              - ${cf:genai-terraform-${self:provider.stage}.CognitoClientId}
+              - 7l1imjcdipkluomk4tbii9jg1q

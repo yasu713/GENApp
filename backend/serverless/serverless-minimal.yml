@@ -1,0 +1,21 @@
+service: genai-test
+
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: python3.11
+  region: ap-northeast-1
+  stage: dev
+  architecture: arm64
+  memorySize: 512
+  timeout: 30
+
+functions:
+  # Simple Test Function
+  testFunction:
+    handler: test_handler.handler
+    events:
+      - httpApi:
+          path: '/test'
+          method: POST
