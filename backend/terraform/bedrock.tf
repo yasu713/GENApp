@@ -186,7 +186,4 @@ resource "aws_bedrockagent_data_source" "main" {
     type = "S3"
   }
 
-  tags = {
-    Name = "${local.name_prefix}-data-source"
-  }
 }

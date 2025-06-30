@@ -66,6 +66,8 @@ resource "aws_s3_bucket_lifecycle_configuration" "main" {
     id     = "cleanup_incomplete_uploads"
     status = "Enabled"
 
+    filter {}
+
     abort_incomplete_multipart_upload {
       days_after_initiation = 1
     }
@@ -74,6 +76,8 @@ resource "aws_s3_bucket_lifecycle_configuration" "main" {
   rule {
     id     = "archive_old_files"
     status = "Enabled"
+
+    filter {}
 
     transition {
       days          = 30
@@ -92,24 +96,24 @@ resource "aws_s3_bucket_lifecycle_configuration" "main" {
 }
 
 # S3 bucket notification for Lambda
-resource "aws_s3_bucket_notification" "main" {
-  bucket = aws_s3_bucket.main.id
+# resource "aws_s3_bucket_notification" "main" {
+#   bucket = aws_s3_bucket.main.id
 
-  lambda_function {
-    lambda_function_arn = "arn:aws:lambda:${local.region}:${local.account_id}:function:${local.name_prefix}-fileProcessor"
-    events              = ["s3:ObjectCreated:*"]
-    filter_prefix       = "uploads/"
-    filter_suffix       = ""
-  }
+#   lambda_function {
+#     lambda_function_arn = "arn:aws:lambda:${local.region}:${local.account_id}:function:${local.name_prefix}-fileProcessor"
+#     events              = ["s3:ObjectCreated:*"]
+#     filter_prefix       = "uploads/"
+#     filter_suffix       = ""
+#   }
 
-  depends_on = [aws_lambda_permission.s3_invoke]
-}
+#   depends_on = [aws_lambda_permission.s3_invoke]
+# }
 
 # Lambda permission for S3 to invoke the function
-resource "aws_lambda_permission" "s3_invoke" {
-  statement_id  = "AllowExecutionFromS3Bucket"
-  action        = "lambda:InvokeFunction"
-  function_name = "${local.name_prefix}-fileProcessor"
-  principal     = "s3.amazonaws.com"
-  source_arn    = aws_s3_bucket.main.arn
-}
+# resource "aws_lambda_permission" "s3_invoke" {
+#   statement_id  = "AllowExecutionFromS3Bucket"
+#   action        = "lambda:InvokeFunction"
+#   function_name = "${local.name_prefix}-fileProcessor"
+#   principal     = "s3.amazonaws.com"
+#   source_arn    = aws_s3_bucket.main.arn
+# }

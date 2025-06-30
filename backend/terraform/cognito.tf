@@ -124,7 +124,8 @@ resource "aws_cognito_user_pool_client" "main" {
 
   explicit_auth_flows = [
     "ALLOW_USER_SRP_AUTH",
-    "ALLOW_USER_PASSWORD_AUTH",
+    "ALLOW_USER_PASSWORD_AUTH", 
+    "ALLOW_ADMIN_USER_PASSWORD_AUTH",
     "ALLOW_REFRESH_TOKEN_AUTH"
   ]
 }
@@ -142,7 +143,7 @@ resource "random_string" "domain_suffix" {
 }
 
 # Admin group
-resource "aws_cognito_user_pool_group" "admin" {
+resource "aws_cognito_user_group" "admin" {
   name         = "admin"
   user_pool_id = aws_cognito_user_pool.main.id
   description  = "Admin users with elevated privileges"
@@ -150,7 +151,7 @@ resource "aws_cognito_user_pool_group" "admin" {
 }
 
 # Regular users group
-resource "aws_cognito_user_pool_group" "users" {
+resource "aws_cognito_user_group" "users" {
   name         = "users"
   user_pool_id = aws_cognito_user_pool.main.id
   description  = "Regular users"
