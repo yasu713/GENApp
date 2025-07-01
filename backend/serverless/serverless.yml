@@ -13,9 +13,9 @@ provider:
   environment:
     STAGE: ${self:provider.stage}
     REGION: ${self:provider.region}
-    COGNITO_USER_POOL_ID: ap-northeast-1_K5XHMMv4s
-    COGNITO_CLIENT_ID: 7l1imjcdipkluomk4tbii9jg1q
-    S3_BUCKET: genai-dev-storage-osiy07k2
+    COGNITO_USER_POOL_ID: ${ssm:/genai/${self:provider.stage}/cognito-user-pool-id, 'ap-northeast-1_K5XHMMv4s'}
+    COGNITO_USER_POOL_CLIENT_ID: ${ssm:/genai/${self:provider.stage}/cognito-client-id, '7l1imjcdipkluomk4tbii9jg1q'}
+    S3_BUCKET: ${ssm:/genai/${self:provider.stage}/s3-bucket-name, 'genai-dev-storage-osiy07k2'}
     KNOWLEDGE_BASE_ID: placeholder-kb-id
     ALLOWED_ORIGINS: ${ssm:/genai/${self:provider.stage}/cors-origins}
   iam:

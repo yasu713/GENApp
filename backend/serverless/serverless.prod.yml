@@ -1,0 +1,110 @@
+service: genai-management-assistant
+
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: nodejs18.x
+  region: ap-northeast-1
+  stage: prod
+  architecture: arm64
+  memorySize: 1024  # 本番環境では増強
+  timeout: 30
+  environment:
+    STAGE: prod
+    REGION: ap-northeast-1
+    ENVIRONMENT: prod  # JWT署名検証に必要
+    COGNITO_USER_POOL_ID: ${ssm:/genai/prod/cognito-user-pool-id}
+    COGNITO_USER_POOL_CLIENT_ID: ${ssm:/genai/prod/cognito-client-id}
+    S3_BUCKET: ${ssm:/genai/prod/s3-bucket-name}
+    KNOWLEDGE_BASE_ID: ${ssm:/genai/prod/knowledge-base-id}
+    ALLOWED_ORIGINS: ${ssm:/genai/prod/cors-origins}
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - bedrock:InvokeModel
+            - bedrock:InvokeModelWithResponseStream
+          Resource: 
+            - arn:aws:bedrock:ap-northeast-1::foundation-model/anthropic.claude-3-5-sonnet-20241022-v2:0
+            - arn:aws:bedrock:ap-northeast-1::foundation-model/anthropic.claude-3-5-sonnet-20240620-v1:0
+        - Effect: Allow
+          Action:
+            - bedrock:Retrieve
+          Resource: 
+            - arn:aws:bedrock:ap-northeast-1:${aws:accountId}:knowledge-base/*
+        - Effect: Allow
+          Action:
+            - ssm:GetParameter
+            - ssm:GetParameters
+          Resource: 
+            - arn:aws:ssm:ap-northeast-1:${aws:accountId}:parameter/genai/prod/*
+        - Effect: Allow
+          Action:
+            - cognito-idp:AdminGetUser
+          Resource: ${ssm:/genai/prod/cognito-user-pool-arn}
+        - Effect: Allow
+          Action:
+            - s3:GetObject
+            - s3:PutObject
+            - s3:DeleteObject
+          Resource: 
+            - arn:aws:s3:::${ssm:/genai/prod/s3-bucket-name}/*
+        - Effect: Allow
+          Action:
+            - s3:ListBucket
+          Resource: 
+            - arn:aws:s3:::${ssm:/genai/prod/s3-bucket-name}
+
+plugins:
+  - serverless-offline
+
+package:
+  patterns:
+    - '!./**'
+    - './src/**'
+    - './node_modules/**'
+
+functions:
+  api:
+    handler: src/api.handler
+    events:
+      - httpApi:
+          path: /{proxy+}
+          method: ANY
+          cors:
+            origin: 
+              - https://*.amplifyapp.com
+              - https://your-domain.com  # 本番ドメインに置き換え
+            headers:
+              - Content-Type
+              - Authorization
+            allowCredentials: true
+
+  chatSimple:
+    handler: ../python/src/simple_chat_agent.lambda_handler
+    runtime: python3.11
+    memorySize: 1024
+    timeout: 60
+    layers:
+      - arn:aws:lambda:ap-northeast-1:${aws:accountId}:layer:genai-python-deps:1
+    environment:
+      ANTHROPIC_API_KEY: ${ssm:/genai/prod/anthropic-api-key}
+      WEB_SEARCH_API_KEY: ${ssm:/genai/prod/web-search-api-key}
+    events:
+      - httpApi:
+          path: /chat/simple
+          method: POST
+          cors:
+            origin: 
+              - https://*.amplifyapp.com  
+              - https://your-domain.com
+            headers:
+              - Content-Type
+              - Authorization
+            allowCredentials: true
+
+custom:
+  serverless-offline:
+    httpPort: 3001

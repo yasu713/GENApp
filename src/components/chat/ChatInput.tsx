@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef } from 'react'
+import Image from 'next/image'
 import { Send, Paperclip, X, FileText } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -77,10 +78,13 @@ export function ChatInput({ onSendMessage, isLoading }: ChatInputProps) {
               <div className="flex items-start space-x-3 flex-1">
                 {file.type.startsWith('image/') ? (
                   <div className="flex-shrink-0">
-                    <img
+                    <Image
                       src={URL.createObjectURL(file)}
                       alt={file.name}
-                      className="w-16 h-16 object-cover rounded border"
+                      width={64}
+                      height={64}
+                      className="object-cover rounded border"
+                      unoptimized
                     />
                   </div>
                 ) : (

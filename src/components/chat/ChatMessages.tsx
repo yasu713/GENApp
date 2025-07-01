@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
+import Image from 'next/image'
 import { Bot, User, FileText, Image as ImageIcon } from 'lucide-react'
 import { Message } from '@/types/chat'
 import { formatDate } from '@/lib/utils'
@@ -81,10 +82,13 @@ export function ChatMessages({
                       <div key={attachment.id}>
                         {attachment.type === 'image' ? (
                           <div className="space-y-2">
-                            <img
+                            <Image
                               src={attachment.url}
                               alt={attachment.name}
+                              width={400}
+                              height={256}
                               className="max-w-full h-auto rounded border max-h-64 object-contain"
+                              unoptimized
                             />
                             <div
                               className={`flex items-center space-x-2 p-2 rounded text-xs ${

@@ -1,253 +1,150 @@
 #!/bin/bash
-
-# Production Deployment Script for AI Management Assistant
-# This script handles secure production deployment with proper validations
+# 本番環境デプロイスクリプト
+# 使用法: ./deploy-prod.sh
 
 set -e
 
-echo "🚀 Starting Production Deployment for AI Management Assistant"
-echo "============================================================"
+echo "🚀 本番環境デプロイ開始"
+echo "========================"
 
-# Color codes for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+# 環境変数の確認
+if [ -z "$AWS_REGION" ]; then
+    export AWS_REGION=ap-northeast-1
+fi
 
-# Configuration
-STAGE="prod"
-AWS_REGION="ap-northeast-1"
-TERRAFORM_DIR="terraform"
-SERVERLESS_DIR="serverless"
+if [ -z "$AWS_PROFILE" ]; then
+    echo "⚠️ AWS_PROFILEが設定されていません。デフォルトプロファイルを使用します。"
+fi
 
-# Functions
-log_info() {
-    echo -e "${BLUE}[INFO]${NC} $1"
-}
+echo "AWS_REGION: $AWS_REGION"
+echo "AWS_PROFILE: ${AWS_PROFILE:-default}"
 
-log_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
-}
+# 前提条件チェック
+echo ""
+echo "📋 前提条件チェック..."
 
-log_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
-}
+# AWSクレデンシャル確認
+aws sts get-caller-identity > /dev/null
+if [ $? -ne 0 ]; then
+    echo "❌ AWS認証に失敗しました。クレデンシャルを確認してください。"
+    exit 1
+fi
+echo "✅ AWS認証確認"
 
-log_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
+# Terraformチェック
+if ! command -v terraform &> /dev/null; then
+    echo "❌ Terraformがインストールされていません。"
+    exit 1
+fi
+echo "✅ Terraform確認"
 
-# Validation functions
-validate_aws_credentials() {
-    log_info "Validating AWS credentials..."
-    if ! aws sts get-caller-identity >/dev/null 2>&1; then
-        log_error "AWS credentials not configured or invalid"
-        exit 1
-    fi
-    log_success "AWS credentials validated"
-}
+# Serverless Frameworkチェック
+if ! command -v serverless &> /dev/null && ! command -v npx &> /dev/null; then
+    echo "❌ Serverless Frameworkがインストールされていません。"
+    exit 1
+fi
+echo "✅ Serverless Framework確認"
 
-validate_environment() {
-    log_info "Validating environment variables..."
-    
-    required_vars=(
-        "AWS_REGION"
-    )
-    
-    for var in "${required_vars[@]}"; do
-        if [[ -z "${!var}" ]]; then
-            log_error "Required environment variable $var is not set"
-            exit 1
-        fi
-    done
-    
-    log_success "Environment variables validated"
-}
+# Step 1: Terraformインフラデプロイ
+echo ""
+echo "🏗️ Step 1: Terraformインフラデプロイ"
+cd terraform
 
-validate_ssm_parameters() {
-    log_info "Validating SSM parameters..."
-    
-    required_params=(
-        "/genai/prod/web-search-api-key"
-        "/genai/prod/anthropic-api-key"
-    )
-    
-    for param in "${required_params[@]}"; do
-        if ! aws ssm get-parameter --name "$param" --region "$AWS_REGION" >/dev/null 2>&1; then
-            log_warning "SSM parameter $param not found or not accessible"
-            log_warning "Please ensure this parameter is set before production use"
-        fi
-    done
-    
-    log_success "SSM parameters validation completed"
-}
+echo "Terraform初期化..."
+terraform init
 
-# Confirmation prompt
-confirm_deployment() {
-    echo ""
-    log_warning "⚠️  PRODUCTION DEPLOYMENT CONFIRMATION ⚠️"
-    echo "This will deploy to production environment:"
-    echo "  - Stage: $STAGE"
-    echo "  - Region: $AWS_REGION"
-    echo "  - Terraform: Infrastructure changes"
-    echo "  - Serverless: Lambda functions and API Gateway"
-    echo ""
-    
-    read -p "Are you sure you want to proceed? (yes/no): " -r
-    if [[ ! $REPLY =~ ^[Yy][Ee][Ss]$ ]]; then
-        log_info "Deployment cancelled by user"
-        exit 0
-    fi
-}
+echo "本番環境プラン作成..."
+terraform plan -var-file=terraform.prod.tfvars -out=tfplan-prod
 
-# Backup function
-backup_current_state() {
-    log_info "Creating backup of current infrastructure state..."
-    
-    backup_dir="backups/$(date +%Y%m%d_%H%M%S)"
-    mkdir -p "$backup_dir"
-    
-    # Backup Terraform state
-    if [[ -f "$TERRAFORM_DIR/terraform.tfstate" ]]; then
-        cp "$TERRAFORM_DIR/terraform.tfstate" "$backup_dir/"
-        log_success "Terraform state backed up"
-    fi
-    
-    # Backup Serverless state
-    if [[ -d "$SERVERLESS_DIR/.serverless" ]]; then
-        cp -r "$SERVERLESS_DIR/.serverless" "$backup_dir/"
-        log_success "Serverless state backed up"
-    fi
-    
-    echo "Backup created at: $backup_dir"
-}
+echo "⚠️ 注意: 実際のデプロイではSSMパラメータに実際のAPIキーを設定してください"
+echo "続行しますか? (y/N)"
+read -r response
 
-# Deployment functions
-deploy_infrastructure() {
-    log_info "Deploying infrastructure with Terraform..."
-    
-    cd "$TERRAFORM_DIR"
-    
-    # Initialize Terraform
-    terraform init -input=false
-    
-    # Plan infrastructure changes
-    log_info "Planning infrastructure changes..."
-    terraform plan -var="stage=$STAGE" -out=tfplan
-    
-    # Apply infrastructure changes
-    log_info "Applying infrastructure changes..."
-    terraform apply -input=false tfplan
-    
-    # Clean up plan file
-    rm -f tfplan
-    
-    cd ..
-    log_success "Infrastructure deployment completed"
-}
+if [[ "$response" != "y" && "$response" != "Y" ]]; then
+    echo "デプロイをキャンセルしました。"
+    exit 0
+fi
 
-deploy_serverless() {
-    log_info "Deploying serverless application..."
-    
-    cd "$SERVERLESS_DIR"
-    
-    # Install dependencies
-    log_info "Installing Node.js dependencies..."
-    npm ci --production
-    
-    # Deploy with production configuration
-    log_info "Deploying Lambda functions and API Gateway..."
-    npx serverless deploy \
-        --stage "$STAGE" \
-        --region "$AWS_REGION" \
-        --config "serverless.yml" \
-        --verbose
-    
-    cd ..
-    log_success "Serverless deployment completed"
-}
+echo "Terraformデプロイ実行..."
+terraform apply tfplan-prod -auto-approve
 
-# Test deployment
-test_deployment() {
-    log_info "Running post-deployment tests..."
-    
-    # Test API Gateway health
-    api_url=$(aws cloudformation describe-stacks \
-        --stack-name "genai-$STAGE" \
-        --region "$AWS_REGION" \
-        --query 'Stacks[0].Outputs[?OutputKey==`ApiGatewayRestApiUrl`].OutputValue' \
-        --output text 2>/dev/null || echo "")
-    
-    if [[ -n "$api_url" ]]; then
-        log_info "Testing API Gateway endpoint..."
-        if curl -s -f "${api_url}/health" >/dev/null; then
-            log_success "API Gateway health check passed"
-        else
-            log_warning "API Gateway health check failed"
-        fi
-    fi
-    
-    # Test Lambda functions
-    log_info "Testing Lambda functions..."
-    
-    functions=("genai-$STAGE-api" "genai-$STAGE-chatAgent" "genai-$STAGE-chatStream")
-    
-    for func in "${functions[@]}"; do
-        if aws lambda get-function --function-name "$func" --region "$AWS_REGION" >/dev/null 2>&1; then
-            log_success "Lambda function $func is deployed"
-        else
-            log_warning "Lambda function $func not found"
-        fi
-    done
-}
+# Terraform出力値を取得
+echo "Terraform出力値を取得中..."
+COGNITO_USER_POOL_ID=$(terraform output -raw cognito_user_pool_id)
+COGNITO_CLIENT_ID=$(terraform output -raw cognito_user_pool_client_id)
+S3_BUCKET_NAME=$(terraform output -raw s3_bucket_name)
+KNOWLEDGE_BASE_ID=$(terraform output -raw knowledge_base_id 2>/dev/null || echo "")
 
-# Main deployment workflow
-main() {
-    echo "Starting pre-deployment validations..."
-    
-    # Pre-deployment validations
-    validate_aws_credentials
-    validate_environment
-    validate_ssm_parameters
-    
-    # Confirmation
-    confirm_deployment
-    
-    # Create backup
-    backup_current_state
-    
-    echo ""
-    log_info "Starting deployment process..."
-    
-    # Deploy infrastructure
-    deploy_infrastructure
-    
-    # Wait for infrastructure to stabilize
-    log_info "Waiting for infrastructure to stabilize..."
-    sleep 30
-    
-    # Deploy serverless application
-    deploy_serverless
-    
-    # Test deployment
-    test_deployment
-    
-    echo ""
-    log_success "🎉 Production deployment completed successfully!"
-    echo ""
-    log_info "Next steps:"
-    echo "  1. Update DNS records to point to the new API Gateway"
-    echo "  2. Update frontend environment variables with new endpoint URLs"
-    echo "  3. Configure monitoring and alerting"
-    echo "  4. Run comprehensive integration tests"
-    echo ""
-    log_warning "Remember to:"
-    echo "  - Monitor CloudWatch logs for any issues"
-    echo "  - Verify all SSM parameters are properly set"
-    echo "  - Test all major user workflows"
-    echo ""
-}
+# SSMパラメータとして保存
+echo "出力値をSSMパラメータに保存..."
+aws ssm put-parameter --name "/genai/prod/cognito-user-pool-id" --value "$COGNITO_USER_POOL_ID" --type "String" --overwrite --region "$AWS_REGION"
+aws ssm put-parameter --name "/genai/prod/cognito-client-id" --value "$COGNITO_CLIENT_ID" --type "String" --overwrite --region "$AWS_REGION"
+aws ssm put-parameter --name "/genai/prod/s3-bucket-name" --value "$S3_BUCKET_NAME" --type "String" --overwrite --region "$AWS_REGION"
 
-# Execute main function
-main "$@"
+if [ -n "$KNOWLEDGE_BASE_ID" ]; then
+    aws ssm put-parameter --name "/genai/prod/knowledge-base-id" --value "$KNOWLEDGE_BASE_ID" --type "String" --overwrite --region "$AWS_REGION"
+fi
+
+cd ..
+
+# Step 2: Node.js Lambdaビルド
+echo ""
+echo "🔨 Step 2: Node.js Lambdaビルド"
+cd lambda/nodejs
+
+echo "依存関係インストール..."
+npm ci --production
+
+echo "TypeScriptビルド..."
+npm run build
+
+cd ../..
+
+# Step 3: Python Lambda準備
+echo ""
+echo "🐍 Step 3: Python Lambda準備"
+cd lambda/python
+
+echo "Python依存関係確認..."
+if [ -f "requirements.txt" ]; then
+    echo "依存関係を確認中..."
+    cat requirements.txt
+fi
+
+cd ../..
+
+# Step 4: Serverless Framework デプロイ
+echo ""
+echo "⚡ Step 4: Serverless Framework デプロイ"
+cd serverless
+
+echo "依存関係インストール..."
+npm ci
+
+echo "本番環境デプロイ実行..."
+npx serverless deploy --config serverless.prod.yml --stage prod
+
+cd ..
+
+# Step 5: 設定確認
+echo ""
+echo "🔍 Step 5: デプロイ後確認"
+
+echo "API Gateway エンドポイント:"
+aws apigatewayv2 get-apis --region "$AWS_REGION" --query "Items[?Name=='genai-management-assistant-prod'].ApiEndpoint" --output text
+
+echo "Lambda関数一覧:"
+aws lambda list-functions --region "$AWS_REGION" --query "Functions[?starts_with(FunctionName, 'genai-management-assistant-prod')].FunctionName" --output table
+
+echo ""
+echo "🎉 本番環境デプロイ完了!"
+echo ""
+echo "📋 次のステップ:"
+echo "1. フロントエンドの環境変数を更新"
+echo "2. Amplifyでフロントエンドをデプロイ"
+echo "3. エンドツーエンドテストの実行"
+echo "4. 監視・アラートの設定"
+echo ""
+echo "⚠️ 重要: 実際のAPIキーを設定してください"
+echo "aws ssm put-parameter --name '/genai/prod/anthropic-api-key' --value 'sk-ant-...' --type 'SecureString' --overwrite"
+echo "aws ssm put-parameter --name '/genai/prod/web-search-api-key' --value 'your-key' --type 'SecureString' --overwrite"
